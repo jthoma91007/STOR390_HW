@@ -1,0 +1,203 @@
+---
+title: "HW4 Jacob Thoma"
+output: html_document
+date: "2024-03-14"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+
+#this is all of the preprocessing done for the decision trees lecture.  
+
+path <- 'https://raw.githubusercontent.com/guru99-edu/R-Programming/master/titanic_data.csv'
+titanic <-read.csv(path)
+head(titanic)
+
+library(dplyr)
+
+#replace ? with NA
+replace_question_mark <- function(x) {
+  if (is.character(x)) {
+    x <- na_if(x, "?")
+  }
+  return(x)
+}
+
+titanic <- titanic %>%
+  mutate_all(replace_question_mark)
+
+set.seed(678)
+shuffle_index <- sample(1:nrow(titanic))
+head(shuffle_index)
+
+titanic <- titanic[shuffle_index, ]
+head(titanic)
+
+library(dplyr)
+# Drop variables
+clean_titanic <- titanic %>%
+select(-c(home.dest, cabin, name, x, ticket)) %>% 
+#Convert to factor level
+    mutate(pclass = factor(pclass, levels = c(1, 2, 3), labels = c('Upper', 'Middle', 'Lower')),
+    survived = factor(survived, levels = c(0, 1), labels = c('No', 'Yes'))) %>%
+na.omit()
+#previously were characters
+clean_titanic$age <- as.numeric(clean_titanic$age)
+clean_titanic$fare <- as.numeric(clean_titanic$fare)
+glimpse(clean_titanic)
+
+create_train_test <- function(data, size = 0.8, train = TRUE) {
+    n_row = nrow(data)
+    total_row = size * n_row
+    train_sample <- 1: total_row
+    if (train == TRUE) {
+        return (data[train_sample, ])
+    } else {
+        return (data[-train_sample, ])
+    }
+}
+data_train <- create_train_test(clean_titanic, 0.8, train = TRUE)
+data_test <- create_train_test(clean_titanic, 0.8, train = FALSE)
+
+clean_titanic
+```
+
+#
+Create a table reporting the proportion of people in the training set surviving the Titanic.  Do the same for the testing set.  Comment on whether the current training-testing partition looks suitable.  
+
+```{r}
+library(dplyr)
+library(caret)
+
+prop_train = nrow(filter(data_train, survived=="Yes"))/nrow(data_train)
+prop_test = nrow(filter(data_test, survived == "Yes"))/nrow(data_test)
+
+tab = matrix(c(prop_train, prop_test), nrow = 1)
+colnames(tab) = c("Train Proportion","Test Proportion")
+tab
+```
+
+*There is a difference in the training and testing proportions, but this difference is assumed to be negligible and due to variability in construction of testing/training data. *
+
+#
+Use the `glm` command to build a logistic regression on the training partition.  `survived` should be your response variable and `pclass`, `sex`, `age`, `sibsp`, and `parch` should be your response variables.  
+
+```{r}
+model <- glm(survived ~.,family=binomial(link='logit'),data=data_train)
+summary(model)
+
+fitted.results <- predict(model,newdata=data_test,type='response')
+fitted.results <- ifelse(fitted.results > 0.5,"Yes","No")
+
+misClasificError <- mean(fitted.results != data_test$survived)
+print(paste('Accuracy',1-misClasificError))
+
+cm_logreg_df <- confusionMatrix(as.factor(fitted.results), data_test$survived, positive = "Yes")
+cm_logreg_df
+```
+
+We would now like to test whether this classifier is *fair* across the sex subgroups.  It was reported that women and children were prioritized on the life-boats and as a result survived the incident at a much higher rate.  Let us see if our model is able to capture this fact.  
+
+#
+
+Subset your test data into a male group and a female group.  Then, use the `predict` function on the male testing group to come up with predicted probabilities of surviving the Titanic for each male in the testing set.  Do the same for the female testing group.  
+
+```{r}
+m_test = filter(data_test, sex=="male")
+f_test = filter(data_test, sex=="female")
+
+m_fitted.results <- predict(model,newdata=m_test,type='response')
+
+f_fitted.results <- predict(model,newdata=f_test,type='response')
+
+m_fitted.results
+f_fitted.results
+```
+
+# 
+
+Now recall that for this logistic *regression* to be a true classifier, we need to pair it with a decision boundary.  Use an `if-else` statement to translate any predicted probability in the male group greater than $0.5$ into `Yes` (as in Yes this individual is predicted to have survived).  Likewise an predicted probability less than $0.5$ should be translated into a `No`.  
+
+Do this for the female testing group as well, and then create a confusion matrix for each of the male and female test set predictions.  You can use the `confusionMatrix` command as seen in class to expidite this process as well as provide you necessary metrics for the following questions.  
+
+```{r}
+library(caret)
+
+m_fitted.results <- ifelse(m_fitted.results > 0.5,"Yes","No")
+f_fitted.results <- ifelse(f_fitted.results > 0.5,"Yes","No")
+
+m_test$survived <- factor(m_test$survived, levels = c("Yes", "No"))
+f_test$survived <- factor(f_test$survived, levels = c("Yes", "No"))
+
+cm_logreg_m <- confusionMatrix(as.factor(m_fitted.results), m_test$survived, positive = "Yes")
+cm_logreg_m[2]
+
+cm_logreg_f <- confusionMatrix(as.factor(f_fitted.results), f_test$survived, positive = "Yes")
+cm_logreg_f[2]
+
+```
+
+#
+We can see that indeed, at least within the testing groups, women did seem to survive at a higher proportion than men (24.8\% to 76.3\% in the testing set).  Print a summary of your trained model and interpret one of the fitted coefficients in light of the above disparity.  
+
+```{r}
+summary(model)
+```
+
+*Holding other predictors constant, a male (sexmale = 1) and a female (sexmale = 0) have a logodds difference in survival of 2.712 units. In other words, the log odds of a male surviving decrease by 2.712 units when compared to a female with other variables being held constant. This makes sense because males survived at a much lower rate.* 
+
+
+#
+
+Now let's see if our model is *fair* across this explanatory variable.  Calculate five measures (as defined in class) in this question: the Overall accuracy rate ratio between females and males, the disparate impact between females and males, the statistical parity between females and males, and the predictive equality as well as equal opportunity between females and males (collectively these last two comprise equalized odds).  Set a reasonable $\epsilon$ each time and then comment on which (if any) of these five criteria are met.  
+
+
+```{r}
+#Saying TRUE if fairness disparity is detected
+
+epsilon = 0.1
+
+accuracy_rate_m = 99/129
+accuracy_rate_f = 65/80
+accuracy_rate_m/accuracy_rate_f 
+accuracy_rate_m/accuracy_rate_f  < (1-epsilon)
+
+disp_imp = (10/129)/(69/80)
+disp_imp
+disp_imp < (1-epsilon)
+
+parity = abs((69/80)-(10/129))
+parity
+parity > epsilon
+
+pred_eq = abs((4/97) - (13/19))
+pred_eq
+pred_eq > epsilon
+
+eq_opp = abs((6/320) - (59/61))
+eq_opp
+eq_opp > epsilon
+```
+*It seems that none of the conditions for statistical fairness are met except for similar accuracy ratings between the protected and non-protected classes. The accuracy ratings could be similar due to predictable trends in the data that were captured through logistic regression, such as the general prioritization of genders when evacuating the Titanic.*
+
+
+
+It is always important for us to interpret our results in light of the original data and the context of the analysis.  In this case, it is relevant that we are analyzing a historical event post-facto and any disparities across demographics identified are unlikely to be replicated.  So even though our model fails numerous of the statistical fairness criteria, I would argue we need not worry that our model could be misused to perpetuate discrimination in the future.  After all, this model is likely not being used to prescribe a preferred method of treatment in the future.  
+
+
+#
+
+Even so, provide a *philosophical* notion of justice or fairness that may have motivated the Titanic survivors to act as they did. Spell out what this philosophical notion or principle entails?
+
+*Appealing to the virtue of sacrifice, it is reasonable to argue that a virtuous man may sacrifice his life in the situation of the Titanic if it means saving women and children on the ship that are less capable in surviving without the man's sacrifice. A virtuous man values and protects the lives of women and children over his own, therefore it is his moral duty to remain on the ship if it means saving the lives of women and children.*
+
+*Appealing to classical utilitarianism, the best decision in the case of the sinking Titanic is to maximize the number of people evacuated. Evac boats have size and weight limit restrictions. If men are bigger on average then women and children, they should not be prioritized for rescue when capacity constraints are considered and as such less will be evacuated. *
+
+*Hopefully at least one of those answers works :)*
+
+
+
+
