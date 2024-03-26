@@ -1,0 +1,57 @@
+---
+title: "HW 5"
+author: "Jacob Thoma"
+date: "12/29/2023"
+output:
+  word_document: default
+  html_document:
+    number_sections: true
+---
+
+```{r, echo=FALSE, include=FALSE}
+library(dplyr)
+library(ggplot2)
+raw_data <- read.csv("./compas-scores-two-years.csv")
+```
+
+*Stance: While the idea of an accurate, unbiased recidivism algorithm has upside, the current state of the COMPAS algorithm does not have enough upside to justify any level of use use given its pitfalls in fairness across races. Therefore, I do not advise you, as the judge, to use COMPAS at all in your decision making process from a statistical and philosophical standpoint.*
+
+*One of the most noble pursuits of judgement is fairness. While complete fairness is almost never obtainable, it is the responsibility of a judge to be as fair as possible. Therefore, every aspect of a judge's decision should be fair to ensure the fairest outcome. From a statistical standpoint, the COMPAS algorithm does not classify people of different races fairly. In order to support this claim, I will use information from an independent third party study of the COMPAS algorithm from ProPublica, linked [here](https://www.propublica.org/datastore/dataset/compas-recidivism-risk-score-data-and-analysis). For your reference, the methodology for this research is detailed in "How We Analyzed the COMPAS Recidivism Algorithm" and linked [here](https://www.propublica.org/article/how-we-analyzed-the-compas-recidivism-algorithm).*
+
+*One of the first statistical concerns I have with the COMPAS algorithm is that the distribution of recidivism risk scores differs between whites and blacks, as seen below ^1^ . These scores go based on level of risk from 1 (very low risk) to 10 (very high risk):*
+
+```{r, echo=FALSE, include=FALSE}
+df <- dplyr::select(raw_data, age, c_charge_degree, race, age_cat, score_text, sex, priors_count, 
+                    days_b_screening_arrest, decile_score, is_recid, two_year_recid, c_jail_in, c_jail_out) %>% 
+        filter(days_b_screening_arrest <= 30) %>%
+        filter(days_b_screening_arrest >= -30) %>%
+        filter(is_recid != -1) %>%
+        filter(c_charge_degree != "O") %>%
+        filter(score_text != 'N/A')
+df$length_of_stay <- as.numeric(as.Date(df$c_jail_out) - as.Date(df$c_jail_in))
+cor(df$length_of_stay, df$decile_score)
+
+library(grid)
+library(gridExtra)
+pblack <- ggplot(data=filter(df, race =="African-American"), aes(ordered(decile_score))) + 
+          geom_bar() + xlab("Decile Score") +
+          ylim(0, 650) + ggtitle("Black Risk Scores")
+pwhite <- ggplot(data=filter(df, race =="Caucasian"), aes(ordered(decile_score))) + 
+          geom_bar() + xlab("Decile Score") +
+          ylim(0, 650) + ggtitle("White Risk Scores")
+
+```
+
+```{r, echo=FALSE}
+grid.arrange(pblack, pwhite,  ncol = 2)
+```
+
+*As you can see, there are disparities in how black defendants are given recidivism risk scores versus whites. Even in cases with the same conditions, ProPublica researchers state: "Black defendants are 45% more likely than white defendants to receive a higher score correcting for the seriousness of their crime, previous arrests, and future criminal behavior." ^1^. Lets say you have a case in front of you where a white man sold drugs and you must decide to grant parole or not. If you kept all facts of the case the same, but changed the mans race to black, the COMPAS algorithm is significantly more likely to think that person is at higher risk to repeat offend. Unfortunately, the risk score distributions seen above contribute to massive disparities in the false positive rates of the COMPAS algorithm across races, where the false positive rate for black defendants is almost twice as high as it is for whites (44.85% vs. 23.45%) ^1^. This means that if a black defendant was not a repeat offender, 44.85% of them were still thought to be repeat offenders. This bias in COMPAS is most scary when a judge's intuition is most needed: cases where the decision on granting parole is unclear and complex.*
+
+*The tougher it is for you to decide on the case, the more consequential using COMPAS risk scores are. Think about the case presented above, and say that you were 50-50 on whether or not to grant the man parole regardless of race. If you used the COMPAS risk score as part of your decision and it was low (1-3), maybe you would be more likely grant him parole than with moderate risk (4-6). If the risk score is influenced by race, this means that your decision, with all else being equal, is influenced by the race of the defendant. An honorable judge must respect the virtue of fairness above all else when deciding a case. The race of the defendant cannot be controlled, and as shown above, their COMPAS risk score cannot be fully controlled. If the honorable judge believes that factors outside of ones control are unfair to consider when deciding on a case, then they should never let the COMPAS risk score taint their pursuit of a fair decision on someone's parole.*
+
+*In addition to fairness, I will argue that confidence is a virtue for an honorable judge. A judge is making decisions that will inherently affect peoples lives, they must be made with confidence that said decision is best for the individual and society. As such, how could an honorable judge be more confident by using the decision of an algorithm whose false positive rate for black defendants is barely less than a coin flip? While even the most experienced judge is always uncertain of if someone will be a repeat offender, they must be confident in their intuition and experience to trust that they can outperform this false positive rate for black defendants, let alone make decisions that do not affect non-repeat offending black defendants twice as much as non-repeat white defendants. Therefore, you, as an honorable judge, should have confidence in your own decision making process without factoring in COMPAS results at all.*
+
+*In summary, an honorable judge should observe the virtues of fairness and confidence in their decision-making process. As COMPAS does not align with those virtues, it should not be used at all to influence the judge's decision for any defendants.*
+
+^1^ https://www.propublica.org/datastore/dataset/compas-recidivism-risk-score-data-and-analysis
